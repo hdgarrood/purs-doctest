@@ -1,5 +1,12 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Language.PureScript.Docs.Doctest where
+{-# LANGUAGE TupleSections #-}
+module Language.PureScript.Docs.Doctest
+  ( Example(..)
+  , parseDoctests
+  , parseFromDeclaration
+  , parseComment
+  , parseCodeBlock
+  ) where
 
 import Prelude
 import Control.Applicative ((<|>))
@@ -24,6 +31,29 @@ doctestMarker :: Text
 doctestMarker = ">>> "
 
 -- |
+-- Extract all examples from a module.
+--
+-- Note that we do not include examples from re-exports, as those may require
+-- different imports, and also should not cause tests to fail (if they come
+-- from different packages).
+--
+parseDoctests :: Docs.Module -> [(Text, Example)]
+parseDoctests =
+  concatMap parseFromDeclaration . Docs.modDeclarations
+
+-- TODO: Disambiguate when e.g. there is a data constructor and a type who
+-- share a name, or a type and a kind.
+parseFromDeclaration :: Docs.Declaration -> [(Text, Example)]
+parseFromDeclaration decl =
+  go Docs.declTitle Docs.declComments decl
+  ++ concatMap
+      (go Docs.cdeclTitle Docs.cdeclComments)
+      (Docs.declChildren decl)
+  where
+  go title coms decl =
+    map (title decl,) (maybe [] parseComment (coms decl))
+
+-- |
 -- Given a comment, attempt to parse some doctest examples out of it. Doctest
 -- examples are expected to use the following format:
 --
@@ -43,8 +73,8 @@ doctestMarker = ">>> "
 -- example, and the previous example's output is not checked). All other text
 -- is ignored.
 --
-parseDoctests :: Text -> [Example]
-parseDoctests = go . Cheapskate.markdown Cheapskate.def
+parseComment :: Text -> [Example]
+parseComment = go . Cheapskate.markdown Cheapskate.def
   where
   go :: Cheapskate.Doc -> [Example]
   go (Cheapskate.Doc _ blocks) = concatMap goBlock (toList blocks)
