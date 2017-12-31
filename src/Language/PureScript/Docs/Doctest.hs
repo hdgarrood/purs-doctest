@@ -1,5 +1,4 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TupleSections #-}
 module Language.PureScript.Docs.Doctest where
 
 import Prelude
@@ -7,7 +6,7 @@ import Control.Applicative ((<|>))
 import Control.Monad (guard)
 import Data.List (unfoldr)
 import Data.Text (Text)
-import Data.Maybe (isJust)
+import Data.Maybe (isJust, listToMaybe)
 import qualified Data.Text as Text
 import Data.Foldable (toList)
 import qualified Cheapskate
@@ -67,19 +66,17 @@ parseCodeBlock = unfoldr extractExample . Text.lines
 -- the lines after parsing it, or Nothing if no examples can be parsed.
 --
 extractExample :: [Text] -> Maybe (Example, [Text])
-extractExample (x:y:xs) =
-  fmap rest (parseExample x (Just y))
-  <|> extractExample (y:xs)
+extractExample (x:xs) =
+  fmap rest (parseExample x (listToMaybe xs))
+  <|> extractExample xs
   where
   rest e =
     (e, rest' e)
   rest' e =
     if isJust (exampleExpectedOutput e)
-      then xs
-      else y:xs
-extractExample [x] =
-  fmap (,[]) (parseExample x Nothing)
-extractExample _ =
+      then drop 1 xs
+      else xs
+extractExample [] =
   Nothing
 
 -- |
