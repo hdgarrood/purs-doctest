@@ -1,6 +1,6 @@
 module Main where
 
-import Lib
+-- import Language.PureScript.Docs.Doctest
 
 main :: IO ()
-main = someFunc
+main = pure ()
