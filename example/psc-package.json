@@ -1,0 +1,12 @@
+{
+    "name": "example",
+    "set": "psc-0.11.7",
+    "source": "https://github.com/purescript/package-sets.git",
+    "depends": [
+        "lists",
+        "psci-support",
+        "console",
+        "eff",
+        "prelude"
+    ]
+}

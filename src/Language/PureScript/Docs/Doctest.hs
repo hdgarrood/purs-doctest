@@ -2,6 +2,7 @@
 {-# LANGUAGE TupleSections #-}
 module Language.PureScript.Docs.Doctest
   ( Example(..)
+  , parseDoctestsFromModules
   , parseDoctests
   , parseFromDeclaration
   , parseComment
@@ -18,6 +19,7 @@ import qualified Data.Text as Text
 import Data.Foldable (toList)
 import qualified Cheapskate
 
+import qualified Language.PureScript as P
 import qualified Language.PureScript.Docs as Docs
 
 data Example = Example
@@ -29,6 +31,11 @@ data Example = Example
 -- | The string which marks the start of a doctest example.
 doctestMarker :: Text
 doctestMarker = ">>> "
+
+parseDoctestsFromModules ::
+  [Docs.Module] -> [(P.ModuleName, [(Text, Example)])]
+parseDoctestsFromModules =
+  map (\m -> (Docs.modName m, parseDoctests m))
 
 -- |
 -- Extract all examples from a module.

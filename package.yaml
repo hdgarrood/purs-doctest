@@ -23,12 +23,15 @@ dependencies:
 - purescript ==0.11.7
 - cheapskate
 - text
+- Glob
+- transformers
+- bower-json
 
 library:
   source-dirs: src
 
 executables:
-  purs-doctest-exe:
+  purs-doctest:
     main:                Main.hs
     source-dirs:         app
     ghc-options:
