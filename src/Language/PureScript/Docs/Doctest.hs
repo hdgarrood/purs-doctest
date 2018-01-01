@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE LambdaCase #-}
 module Language.PureScript.Docs.Doctest
   ( Example(..)
   , parseDoctestsFromModules
@@ -12,28 +13,35 @@ module Language.PureScript.Docs.Doctest
 import Prelude
 import Control.Applicative ((<|>))
 import Control.Monad (guard)
+import Control.Arrow ((&&&))
 import Data.List (unfoldr)
 import Data.Text (Text)
 import Data.Maybe (isJust, listToMaybe)
+import Data.Either (partitionEithers)
 import qualified Data.Text as Text
-import Data.Foldable (toList)
 import qualified Cheapskate
 
 import qualified Language.PureScript as P
 import qualified Language.PureScript.Docs as Docs
+import qualified Language.PureScript.Interactive as Interactive
 
-data Example = Example
-  { exampleInput :: Text
-  , exampleExpectedOutput :: Maybe Text
-  }
-  deriving (Show, Eq, Ord)
+-- todo: include lines in source files in errors.
+-- todo: allow Eff actions in doctests
+
+data Example
+  -- | An assignment such as `x = 4 * 5`.
+  = Assign (P.ValueDeclarationData [P.GuardedExpr])
+  -- | Evaluates an expression like, say `x + 3`, calls `show` on it, and
+  -- compares the result with an expected result (as a Text) like `23`.
+  | Evaluate P.Expr Text
+  deriving (Show)
 
 -- | The string which marks the start of a doctest example.
 doctestMarker :: Text
 doctestMarker = ">>> "
 
 parseDoctestsFromModules ::
-  [Docs.Module] -> [(P.ModuleName, [(Text, Example)])]
+  [Docs.Module] -> [(P.ModuleName, [(Text, ([String], [Example]))])]
 parseDoctestsFromModules =
   map (\m -> (Docs.modName m, parseDoctests m))
 
@@ -44,21 +52,21 @@ parseDoctestsFromModules =
 -- different imports, and also should not cause tests to fail (if they come
 -- from different packages).
 --
-parseDoctests :: Docs.Module -> [(Text, Example)]
+parseDoctests :: Docs.Module -> [(Text, ([String], [Example]))]
 parseDoctests =
   concatMap parseFromDeclaration . Docs.modDeclarations
 
 -- TODO: Disambiguate when e.g. there is a data constructor and a type who
 -- share a name, or a type and a kind.
-parseFromDeclaration :: Docs.Declaration -> [(Text, Example)]
+parseFromDeclaration :: Docs.Declaration -> [(Text, ([String], [Example]))]
 parseFromDeclaration decl =
   go Docs.declTitle Docs.declComments decl
-  ++ concatMap
+  : map
       (go Docs.cdeclTitle Docs.cdeclComments)
       (Docs.declChildren decl)
   where
-  go title coms decl =
-    map (title decl,) (maybe [] parseComment (coms decl))
+  go title coms =
+    title &&& (maybe mempty parseComment . coms)
 
 -- |
 -- Given a comment, attempt to parse some doctest examples out of it. Doctest
@@ -80,21 +88,22 @@ parseFromDeclaration decl =
 -- example, and the previous example's output is not checked). All other text
 -- is ignored.
 --
-parseComment :: Text -> [Example]
+parseComment :: Text -> ([String], [Example])
 parseComment = go . Cheapskate.markdown Cheapskate.def
   where
-  go :: Cheapskate.Doc -> [Example]
-  go (Cheapskate.Doc _ blocks) = concatMap goBlock (toList blocks)
+  go :: Cheapskate.Doc -> ([String], [Example])
+  go (Cheapskate.Doc _ blocks) = foldMap goBlock blocks
 
-  goBlock :: Cheapskate.Block -> [Example]
+  goBlock :: Cheapskate.Block -> ([String], [Example])
   goBlock (Cheapskate.CodeBlock (Cheapskate.CodeAttr "purescript" _) text) =
     parseCodeBlock text
   goBlock _ =
-    []
+    mempty
 
 -- | Parse the contents of a code block.
-parseCodeBlock :: Text -> [Example]
-parseCodeBlock = unfoldr extractExample . Text.lines
+parseCodeBlock :: Text -> ([String], [Example])
+parseCodeBlock =
+  partitionEithers . unfoldr extractExample . Text.lines
 
 -- |
 -- Given some lines, attempt to parse a single example from a pair of two
@@ -102,17 +111,17 @@ parseCodeBlock = unfoldr extractExample . Text.lines
 -- and 4, and so on. This function returns Just an example and the remainder of
 -- the lines after parsing it, or Nothing if no examples can be parsed.
 --
-extractExample :: [Text] -> Maybe (Example, [Text])
+extractExample :: [Text] -> Maybe (Either String Example, [Text])
 extractExample (x:xs) =
   fmap rest (parseExample x (listToMaybe xs))
   <|> extractExample xs
   where
   rest e =
     (e, rest' e)
-  rest' e =
-    if isJust (exampleExpectedOutput e)
-      then drop 1 xs
-      else xs
+
+  rest' (Right Evaluate{}) = drop 1 xs
+  rest' (Right Assign{}) = xs
+  rest' (Left _) = xs
 extractExample [] =
   Nothing
 
@@ -120,12 +129,28 @@ extractExample [] =
 -- Given two consecutive lines of text (or just one if we are at the end of the
 -- comment), attempt to parse an Example.
 --
-parseExample :: Text -> Maybe Text -> Maybe Example
+-- If the first line does not start with ">>> ", which marks the start of an
+-- example, this function returns Nothing. Otherwise, this function returns
+-- either a String error message, saying why the example could not be parsed,
+-- or an Example.
+--
+parseExample :: Text -> Maybe Text -> Maybe (Either String Example)
 parseExample line1 mline2 = do
   input <- Text.stripPrefix doctestMarker line1
-  pure (Example input output)
+  pure (Interactive.parseCommand (Text.unpack input) >>= mkExample)
   where
   output = do
     l <- mline2
     guard (not (doctestMarker `Text.isPrefixOf` l))
     pure l
+
+  mkExample :: Interactive.Command -> Either String Example
+  mkExample cmd = case (cmd, output) of
+    (Interactive.Expression expr, Just out) ->
+      Right (Evaluate expr out)
+    (Interactive.Expression _, Nothing) ->
+      Left "Need an expected output for this example"
+    (Interactive.Decls [P.ValueDeclaration declData], _) ->
+      Right (Assign declData)
+    _ ->
+      Left "This kind of declaration is not supported in doctests."
