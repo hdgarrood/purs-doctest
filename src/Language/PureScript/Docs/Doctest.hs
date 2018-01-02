@@ -13,12 +13,12 @@ module Language.PureScript.Docs.Doctest
 import Prelude
 import Control.Applicative ((<|>))
 import Control.Monad (guard)
-import Control.Arrow (second, (&&&))
+import Control.Arrow (second, (&&&), (***))
 import Data.List (unfoldr)
 import Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.List.NonEmpty as NonEmpty
 import Data.Text (Text)
-import Data.Maybe (isJust, listToMaybe)
+import Data.Maybe (listToMaybe, catMaybes)
 import Data.Either (partitionEithers)
 import qualified Data.Text as Text
 import qualified Cheapskate
@@ -46,8 +46,8 @@ doctestMarker = ">>> "
 
 parseDoctestsFromModules ::
   [Docs.Module] ->
-  ( [(P.ModuleName, [(Text, [String])])]
-  , [(P.ModuleName, [(Text, [Example])])]
+  ( [(P.ModuleName, [(Text, NonEmpty String)])]
+  , [(P.ModuleName, [(Text, NonEmpty Example)])]
   )
 parseDoctestsFromModules =
   unzipAssoc . map (Docs.modName &&& parseDoctests)
@@ -61,11 +61,14 @@ parseDoctestsFromModules =
 --
 parseDoctests ::
   Docs.Module ->
-  ( [(Text, [String])]
-  , [(Text, [Example])]
+  ( [(Text, NonEmpty String)]
+  , [(Text, NonEmpty Example)]
   )
 parseDoctests =
-  foldMap parseFromDeclaration . Docs.modDeclarations
+  (go *** go) . foldMap parseFromDeclaration . Docs.modDeclarations
+  where
+  go :: [(a, [b])] -> [(a, NonEmpty b)]
+  go = catMaybes . map (traverse NonEmpty.nonEmpty)
 
 parseFromDeclaration ::
   Docs.Declaration ->
