@@ -13,8 +13,10 @@ module Language.PureScript.Docs.Doctest
 import Prelude
 import Control.Applicative ((<|>))
 import Control.Monad (guard)
-import Control.Arrow ((&&&))
+import Control.Arrow (second, (&&&))
 import Data.List (unfoldr)
+import Data.List.NonEmpty (NonEmpty(..))
+import qualified Data.List.NonEmpty as NonEmpty
 import Data.Text (Text)
 import Data.Maybe (isJust, listToMaybe)
 import Data.Either (partitionEithers)
@@ -27,6 +29,8 @@ import qualified Language.PureScript.Interactive as Interactive
 
 -- todo: include lines in source files in errors.
 -- todo: allow Eff actions in doctests
+-- todo: Disambiguate when e.g. there is a data constructor and a type who
+-- share a name, or a type and a kind.
 
 data Example
   -- | An assignment such as `x = 4 * 5`.
@@ -41,9 +45,12 @@ doctestMarker :: Text
 doctestMarker = ">>> "
 
 parseDoctestsFromModules ::
-  [Docs.Module] -> [(P.ModuleName, [(Text, ([String], [Example]))])]
+  [Docs.Module] ->
+  ( [(P.ModuleName, [(Text, [String])])]
+  , [(P.ModuleName, [(Text, [Example])])]
+  )
 parseDoctestsFromModules =
-  map (\m -> (Docs.modName m, parseDoctests m))
+  unzipAssoc . map (Docs.modName &&& parseDoctests)
 
 -- |
 -- Extract all examples from a module.
@@ -52,21 +59,32 @@ parseDoctestsFromModules =
 -- different imports, and also should not cause tests to fail (if they come
 -- from different packages).
 --
-parseDoctests :: Docs.Module -> [(Text, ([String], [Example]))]
+parseDoctests ::
+  Docs.Module ->
+  ( [(Text, [String])]
+  , [(Text, [Example])]
+  )
 parseDoctests =
-  concatMap parseFromDeclaration . Docs.modDeclarations
+  foldMap parseFromDeclaration . Docs.modDeclarations
 
--- TODO: Disambiguate when e.g. there is a data constructor and a type who
--- share a name, or a type and a kind.
-parseFromDeclaration :: Docs.Declaration -> [(Text, ([String], [Example]))]
+parseFromDeclaration ::
+  Docs.Declaration ->
+  ( [(Text, [String])]
+  , [(Text, [Example])]
+  )
 parseFromDeclaration decl =
-  go Docs.declTitle Docs.declComments decl
-  : map
-      (go Docs.cdeclTitle Docs.cdeclComments)
-      (Docs.declChildren decl)
+  unzipAssoc $
+    go Docs.declTitle Docs.declComments decl
+    : map
+        (go Docs.cdeclTitle Docs.cdeclComments)
+        (Docs.declChildren decl)
   where
   go title coms =
     title &&& (maybe mempty parseComment . coms)
+
+unzipAssoc :: [(a, (b,c))] -> ( [(a, b)], [(a, c)] )
+unzipAssoc xs =
+  ( map (second fst) xs, map (second snd) xs )
 
 -- |
 -- Given a comment, attempt to parse some doctest examples out of it. Doctest
