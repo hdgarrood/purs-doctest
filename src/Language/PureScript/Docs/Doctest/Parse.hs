@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Language.PureScript.Docs.Doctest.Parse
   ( parseDoctests
   , parseFromDeclaration
@@ -10,13 +11,13 @@ module Language.PureScript.Docs.Doctest.Parse
 
 import Prelude
 import Control.Applicative ((<|>))
-import Control.Monad (guard)
+import Control.Monad (guard, (<=<))
 import Control.Arrow (second, (&&&), (***))
 import Data.List (unfoldr)
 import Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.List.NonEmpty as NonEmpty
 import Data.Text (Text)
-import Data.Maybe (listToMaybe, catMaybes)
+import Data.Maybe (listToMaybe, maybeToList, catMaybes)
 import Data.Either (partitionEithers)
 import qualified Data.Text as Text
 import qualified Cheapskate
@@ -36,9 +37,6 @@ import Language.PureScript.Docs.Doctest.Types (Example(..), Examples(..))
 doctestMarker :: Text
 doctestMarker = ">>> "
 
-examplesToModule :: Examples -> P.Module
-examplesToModule egs = undefined
-
 parseDoctests :: Docs.Module -> Examples
 parseDoctests m =
   let
@@ -46,10 +44,22 @@ parseDoctests m =
   in
     Examples
       { examplesModuleName = Docs.modName m
-      , examplesImports = [] -- todo
+      , examplesImports = maybe [] extractImports (Docs.modComments m)
       , examplesExamples = egs
       -- , examplesErrors = errors
       }
+
+-- | Extract a set of imports from a comment block.
+extractImports :: Text -> [Interactive.ImportedModule]
+extractImports =
+  extractFromCodeBlocks "purescript" (== "imports") go
+  where
+  go = concatMap (maybeToList . parseImport) . Text.lines
+  parseImport = toImport <=< hush . Interactive.parseCommand . Text.unpack
+  toImport (Interactive.Import i) = Just i
+  toImport _ = Nothing
+
+  hush = either (const Nothing) Just
 
 -- |
 -- Extract all examples from a module.
@@ -109,14 +119,29 @@ unzipAssoc xs =
 -- is ignored.
 --
 parseComment :: Text -> ([String], [Example])
-parseComment = go . Cheapskate.markdown Cheapskate.def
+parseComment = extractFromCodeBlocks "purescript" (const True) parseCodeBlock
+
+extractFromCodeBlocks ::
+  forall m.
+  Monoid m =>
+  -- | Code block language
+  Text ->
+  -- | Predicate for code block attributes
+  (Text -> Bool) ->
+  -- | Process the contents of a code block
+  (Text -> m) ->
+  -- | Markdown source
+  Text ->
+  m
+extractFromCodeBlocks lang pred process =
+  go . Cheapskate.markdown Cheapskate.def
   where
-  go :: Cheapskate.Doc -> ([String], [Example])
+  go :: Cheapskate.Doc -> m
   go (Cheapskate.Doc _ blocks) = foldMap goBlock blocks
 
-  goBlock :: Cheapskate.Block -> ([String], [Example])
-  goBlock (Cheapskate.CodeBlock (Cheapskate.CodeAttr "purescript" _) text) =
-    parseCodeBlock text
+  goBlock :: Cheapskate.Block -> m
+  goBlock (Cheapskate.CodeBlock (Cheapskate.CodeAttr lang' attrs) text)
+    | lang == lang' && pred attrs = process text
   goBlock _ =
     mempty
 

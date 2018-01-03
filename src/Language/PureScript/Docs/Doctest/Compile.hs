@@ -40,6 +40,11 @@ examplesToModule egs =
       , P.Implicit
       , Just (P.ModuleName [P.ProperName "$Prelude"])
       )
+    moduleImport =
+      ( examplesModuleName egs
+      , P.Implicit
+      , Nothing
+      )
     examplesDecl =
       P.ValueDecl
         (internalSpan, [])
@@ -55,7 +60,7 @@ examplesToModule egs =
       internalSpan
       []
       moduleName
-      ((importDecl `map` (preludeImport : examplesImports egs)) ++ [examplesDecl])
+      ((importDecl `map` (preludeImport : moduleImport : examplesImports egs)) ++ [examplesDecl])
       Nothing
 
 toCases :: Text -> NonEmpty Example -> P.Expr
