@@ -27,6 +27,7 @@ dependencies:
 - transformers
 - bower-json
 - boxes
+- process
 
 library:
   source-dirs: src
@@ -45,6 +46,7 @@ executables:
     - directory
     - filepath
     - containers
+    - process
 
 tests:
   purs-doctest-test:

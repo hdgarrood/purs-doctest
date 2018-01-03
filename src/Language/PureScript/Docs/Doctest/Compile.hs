@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Language.PureScript.Docs.Doctest.Compile
-  ( examplesToModule
+  ( entryPointModule
+  , examplesModule
   ) where
 
 import Prelude
@@ -22,14 +23,78 @@ import qualified Language.PureScript.Interactive as Interactive
 
 import Language.PureScript.Docs.Doctest.Types (Example(..), Examples(..))
 
+-- | Given a set of examples, create an entry point module which collects them
+-- all into a single value, ready for processing with a doctest runner.
+--
+-- The resulting module exports one value, `main`, whose type is
+--
+--
+--  Array
+--    { moduleName :: String
+--    , examples :: Array
+--      { title :: String
+--      , examples :: Array
+--          { actual :: String
+--          , expected :: String
+--          }
+--      }
+--    }
+--
+entryPointModule :: [Examples] -> P.Module
+entryPointModule = go . map (mkDoctestModuleName . examplesModuleName)
+  where
+  go modNames =
+    let
+      moduleName =
+        P.moduleNameFromString "$Doctest.$Main"
+      doctestImport mn =
+        (mn, P.Implicit, Just mn)
+      main =
+        mainDecl modNames
+    in
+      P.Module
+        internalSpan
+        []
+        moduleName
+        (map (importDecl . doctestImport) modNames ++ [main])
+        Nothing
+
+mainDecl :: [P.ModuleName] -> P.Declaration
+mainDecl modNames =
+  basicValueDecl "main"
+    (P.Literal
+      (P.ArrayLiteral
+        (map examplesFor modNames)))
+  where
+  examplesFor mn =
+    P.Literal (P.ObjectLiteral
+      [ ( P.mkString "moduleName"
+        , P.Literal (P.StringLiteral (P.mkString (P.runModuleName mn)))
+        )
+      , ( P.mkString "examples"
+        , P.Var (P.Qualified (Just mn) (P.Ident "examples"))
+        )
+      ])
+
+
+-- | Create a value declaration given a name and a RHS.
+basicValueDecl :: Text -> P.Expr -> P.Declaration
+basicValueDecl ident expr =
+  P.ValueDecl
+    (internalSpan, [])
+    (P.Ident ident)
+    P.Public
+    []
+    [P.MkUnguarded expr]
+
 -- | Create a module for running doctest examples. The resulting module will
 -- export a single value, `examples`, whose type is
 --
 --   Array { title :: String
 --         , examples :: Array { actual :: String, expected :: String }
 --         }
-examplesToModule :: Examples -> P.Module
-examplesToModule egs =
+examplesModule :: Examples -> P.Module
+examplesModule egs =
   let
     moduleName =
       mkDoctestModuleName (examplesModuleName egs)
@@ -38,7 +103,7 @@ examplesToModule egs =
     preludeImport =
       ( P.moduleNameFromString "Prelude"
       , P.Implicit
-      , Just (P.ModuleName [P.ProperName "$Prelude"])
+      , Just magicPrelude
       )
     moduleImport =
       ( examplesModuleName egs
@@ -46,12 +111,7 @@ examplesToModule egs =
       , Nothing
       )
     examplesDecl =
-      P.ValueDecl
-        (internalSpan, [])
-        (P.Ident "examples")
-        P.Public
-        []
-        [P.MkUnguarded examplesValue]
+      basicValueDecl "examples" examplesValue
     examplesValue =
       P.Literal (P.ArrayLiteral
         (fmap (uncurry toCases) (examplesExamples egs)))
@@ -60,7 +120,8 @@ examplesToModule egs =
       internalSpan
       []
       moduleName
-      ((importDecl `map` (preludeImport : moduleImport : examplesImports egs)) ++ [examplesDecl])
+      (map importDecl (preludeImport : moduleImport : examplesImports egs)
+       ++ [examplesDecl])
       Nothing
 
 toCases :: Text -> NonEmpty Example -> P.Expr
@@ -120,15 +181,18 @@ examplesToExpr egs =
       ])
 
   showVar =
-    P.Var (P.Qualified
-      (Just (P.ModuleName [P.ProperName "$Prelude"]))
-      (P.Ident "show"))
+    P.Var (P.Qualified (Just magicPrelude) (P.Ident "show"))
 
   (assigns, evals) =
     partitionEithers (NonEmpty.toList (fmap toEither egs))
 
   toEither (Assign assign) = Left assign
   toEither (Evaluate expr out) = Right (expr, out)
+
+-- | A name for Prelude to be imported as, with an invalid name so as to make
+-- sure clashes can't happen.
+magicPrelude :: P.ModuleName
+magicPrelude = P.moduleNameFromString "$Prelude"
 
 internalSpan :: P.SourceSpan
 internalSpan = P.internalModuleSourceSpan "<internal>"

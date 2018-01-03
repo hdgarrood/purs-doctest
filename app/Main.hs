@@ -14,9 +14,11 @@ import Control.Arrow (second)
 import Control.Monad.Trans.Except (runExceptT)
 import System.FilePath (makeRelative, pathSeparator)
 import System.FilePath.Glob (glob)
-import System.Exit (exitFailure)
+import System.Exit (exitFailure, ExitCode(..))
 import System.Directory (getCurrentDirectory)
+import System.Process (readProcessWithExitCode)
 import qualified Language.PureScript as P
+import Language.PureScript.Interactive (findNodeProcess)
 import qualified Language.PureScript.Docs as D
 import Web.Bower.PackageMeta (PackageName, parsePackageName)
 import System.IO.UTF8 (readUTF8FileT)
@@ -35,15 +37,21 @@ depsFiles = glob ".psc-package/psc-0.11.7/*/*/src/**/*.purs"
 modulesDir :: FilePath
 modulesDir = ".purs_doctest_modules" ++ pathSeparator : "node_modules"
 
+indexFile :: FilePath
+indexFile = ".purs_doctest_modules" ++ pathSeparator : "index.js"
+
 main :: IO ()
 main = do
   files <- (++) <$> inputFiles <*> depsFiles
   ms <- loadAllModules files >>= successOrExit
 
-  egs <- head <$> collectExamples
-  let m = examplesToModule egs
+  egs <- collectExamples
+  let examples = map examplesModule egs
+  let entry = entryPointModule egs
 
-  e <- liftIO . runMake $ make (("<internal>", m) : ms)
+  let allModules = map ("<internal>",) (entry : examples) ++ ms
+
+  e <- liftIO . runMake $ make allModules
   putStrLn (show e)
 
 collectExamples :: IO [Examples]
@@ -127,3 +135,14 @@ make ms = do
 
     filePathMap :: Map P.ModuleName (Either P.RebuildPolicy FilePath)
     filePathMap = Map.fromList $ map (\(fp, m) -> (P.getModuleName m, Right fp)) ms
+
+evaluate :: IO ()
+evaluate = do
+  writeFile indexFile "require('$Doctest')['main']();"
+  process <- findNodeProcess -- maybe findNodeProcess (pure . pure) nodePath
+  -- result <- traverse (\node -> readProcessWithExitCode node (nodeArgs ++ [indexFile]) "") process
+  result <- traverse (\node -> readProcessWithExitCode node [indexFile] "") process
+  case result of
+    Just (ExitSuccess, out, _)   -> putStrLn out
+    Just (ExitFailure _, _, err) -> putStrLn err
+    Nothing                      -> putStrLn "Couldn't find node.js"
