@@ -2,6 +2,7 @@
 -- |
 -- | The examples in this module use the following imports:
 -- | ```purescript imports
+-- | import Prelude
 -- | import Data.List (List(..), (:))
 -- | ```
 module Example where

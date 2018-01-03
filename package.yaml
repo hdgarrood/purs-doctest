@@ -41,6 +41,10 @@ executables:
     - -with-rtsopts=-N
     dependencies:
     - purs-doctest
+    - base
+    - directory
+    - filepath
+    - containers
 
 tests:
   purs-doctest-test:

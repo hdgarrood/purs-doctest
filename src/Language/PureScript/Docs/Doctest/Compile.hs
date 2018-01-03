@@ -1,5 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Language.PureScript.Docs.Doctest.Compile where
+module Language.PureScript.Docs.Doctest.Compile
+  ( examplesToModule
+  ) where
 
 import Prelude
 import Control.Applicative ((<|>))
