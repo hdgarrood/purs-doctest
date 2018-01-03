@@ -1,5 +1,6 @@
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 module Main where
 
 import Prelude
@@ -7,12 +8,15 @@ import Data.List (foldl')
 import Data.List.NonEmpty (NonEmpty)
 import Data.Map (Map)
 import Data.Traversable (forM)
+import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
 import qualified Data.Map as Map
+import Data.FileEmbed (embedFile)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Category ((>>>))
 import Control.Arrow (second)
 import Control.Monad.Trans.Except (runExceptT)
-import System.FilePath (makeRelative, pathSeparator)
+import System.FilePath (makeRelative, pathSeparator, (</>))
 import System.FilePath.Glob (glob)
 import System.Exit (exitFailure, ExitCode(..))
 import System.Directory (getCurrentDirectory)
@@ -40,6 +44,9 @@ modulesDir = ".purs_doctest_modules" ++ pathSeparator : "node_modules"
 indexFile :: FilePath
 indexFile = ".purs_doctest_modules" ++ pathSeparator : "index.js"
 
+entryFile :: FilePath
+entryFile = modulesDir ++ [pathSeparator] ++ "$Doctest.$Main" ++ [pathSeparator] ++ "index.js"
+
 main :: IO ()
 main = do
   files <- (++) <$> inputFiles <*> depsFiles
@@ -52,7 +59,13 @@ main = do
   let allModules = map ("<internal>",) (entry : examples) ++ ms
 
   e <- liftIO . runMake $ make allModules
-  putStrLn (show e)
+
+  case e of
+    Left errs ->
+      printErrors errs
+    Right _ -> do
+      pwd <- getCurrentDirectory
+      evaluate (pwd </> entryFile)
 
 collectExamples :: IO [Examples]
 collectExamples = do
@@ -136,13 +149,16 @@ make ms = do
     filePathMap :: Map P.ModuleName (Either P.RebuildPolicy FilePath)
     filePathMap = Map.fromList $ map (\(fp, m) -> (P.getModuleName m, Right fp)) ms
 
-evaluate :: IO ()
-evaluate = do
-  writeFile indexFile "require('$Doctest')['main']();"
+evaluate :: FilePath -> IO ()
+evaluate fp = do
+  BS.writeFile indexFile jsRunner
   process <- findNodeProcess -- maybe findNodeProcess (pure . pure) nodePath
   -- result <- traverse (\node -> readProcessWithExitCode node (nodeArgs ++ [indexFile]) "") process
-  result <- traverse (\node -> readProcessWithExitCode node [indexFile] "") process
+  result <- traverse (\node -> readProcessWithExitCode node [indexFile, fp] "") process
   case result of
     Just (ExitSuccess, out, _)   -> putStrLn out
     Just (ExitFailure _, _, err) -> putStrLn err
     Nothing                      -> putStrLn "Couldn't find node.js"
+
+jsRunner :: ByteString
+jsRunner = $(embedFile "static/doctest-runner.js")

@@ -8,6 +8,7 @@ copyright:           "2017 Harry Garrood"
 
 extra-source-files:
 - README.md
+- static/doctest-runner.js
 
 # Metadata used when publishing your package
 synopsis:            Short description of your package
@@ -47,6 +48,8 @@ executables:
     - filepath
     - containers
     - process
+    - file-embed
+    - bytestring
 
 tests:
   purs-doctest-test:
