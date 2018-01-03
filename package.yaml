@@ -26,6 +26,7 @@ dependencies:
 - Glob
 - transformers
 - bower-json
+- boxes
 
 library:
   source-dirs: src

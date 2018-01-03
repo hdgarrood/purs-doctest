@@ -39,6 +39,9 @@ data Example
 -- | A set of examples from a given module.
 data Examples = Examples
   { examplesModuleName :: P.ModuleName
+  -- | A set of imports to be used for all examples.
   , examplesImports :: [Interactive.ImportedModule]
+  -- | Successfully parsed examples.
   , examplesExamples :: [(Text, NonEmpty Example)]
   }
+  deriving (Show)

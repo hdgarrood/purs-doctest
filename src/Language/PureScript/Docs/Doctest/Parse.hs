@@ -2,8 +2,7 @@
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE LambdaCase #-}
 module Language.PureScript.Docs.Doctest.Parse
-  ( parseDoctestsFromModules
-  , parseDoctests
+  ( parseDoctests
   , parseFromDeclaration
   , parseComment
   , parseCodeBlock
@@ -26,25 +25,12 @@ import qualified Language.PureScript as P
 import qualified Language.PureScript.Docs as Docs
 import qualified Language.PureScript.Interactive as Interactive
 
+import Language.PureScript.Docs.Doctest.Types (Example(..), Examples(..))
+
 -- todo: include lines in source files in errors.
 -- todo: allow Eff actions in doctests
 -- todo: Disambiguate when e.g. there is a data constructor and a type who
 -- share a name, or a type and a kind.
-
-data Example
-  -- | An assignment such as `x = 4 * 5`.
-  = Assign (P.ValueDeclarationData [P.GuardedExpr])
-  -- | Evaluates an expression like, say `x + 3`, calls `show` on it, and
-  -- compares the result with an expected result (as a Text) like `23`.
-  | Evaluate P.Expr Text
-  deriving (Show)
-
--- | A set of examples from a given module.
-data Examples = Examples
-  { examplesModuleName :: P.ModuleName
-  , examplesImports :: [Interactive.ImportedModule]
-  , examplesExamples :: [(Text, NonEmpty Example)]
-  }
 
 -- | The string which marks the start of a doctest example.
 doctestMarker :: Text
@@ -53,13 +39,17 @@ doctestMarker = ">>> "
 examplesToModule :: Examples -> P.Module
 examplesToModule egs = undefined
 
-parseDoctestsFromModules ::
-  [Docs.Module] ->
-  ( [(P.ModuleName, [(Text, NonEmpty String)])]
-  , [(P.ModuleName, [(Text, NonEmpty Example)])]
-  )
-parseDoctestsFromModules =
-  unzipAssoc . map (Docs.modName &&& parseDoctests)
+parseDoctests :: Docs.Module -> Examples
+parseDoctests m =
+  let
+    (errors, egs) = parseDoctests' m
+  in
+    Examples
+      { examplesModuleName = Docs.modName m
+      , examplesImports = [] -- todo
+      , examplesExamples = egs
+      -- , examplesErrors = errors
+      }
 
 -- |
 -- Extract all examples from a module.
@@ -68,12 +58,12 @@ parseDoctestsFromModules =
 -- different imports, and also should not cause tests to fail (if they come
 -- from different packages).
 --
-parseDoctests ::
+parseDoctests' ::
   Docs.Module ->
   ( [(Text, NonEmpty String)]
   , [(Text, NonEmpty Example)]
   )
-parseDoctests =
+parseDoctests' =
   (go *** go) . foldMap parseFromDeclaration . Docs.modDeclarations
   where
   go :: [(a, [b])] -> [(a, NonEmpty b)]

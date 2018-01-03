@@ -10,6 +10,19 @@ import Prelude
 import Data.List (List(..), (:))
 import Data.List as List
 
+-- | A silly example.
+-- |
+-- | ```purescript
+-- | >>> x = 2 + 3
+-- | >>> y = x * 2
+-- | >>> y
+-- | 10
+-- | >>> y * 2
+-- | 20
+-- | ```
+silly :: Int -> Int
+silly = id
+
 -- | Given two sorted lists, interleave them to produce a new sorted list
 -- | containing all elements from both lists.
 -- |

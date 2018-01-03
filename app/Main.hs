@@ -2,6 +2,9 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Main where
 
+import Data.List.NonEmpty (NonEmpty)
+import Control.Category ((>>>))
+import Control.Arrow (second)
 import Control.Monad.Trans.Except (runExceptT)
 import System.FilePath.Glob (glob)
 import System.Exit (exitFailure)
@@ -16,13 +19,17 @@ Right dummy = parsePackageName "dummy"
 
 main :: IO ()
 main = do
+  egs <- collectExamples
+  putStrLn (show egs)
+
+collectExamples :: IO [Examples]
+collectExamples = do
   input <- glob "src/**/*.purs"
   deps <- map (dummy,) <$> glob ".psc-package/psc-0.11.7/*/*/src/**/*.purs"
 
   modules <- parseAndConvert input deps
-  let egs = parseDoctestsFromModules modules
+  pure (map parseDoctests modules)
 
-  putStrLn (show egs)
   where
   successOrExit :: Either P.MultipleErrors a -> IO a
   successOrExit act =
