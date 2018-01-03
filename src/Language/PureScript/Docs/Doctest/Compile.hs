@@ -79,7 +79,6 @@ mainDecl modNames =
         )
       ])
 
-
 -- | Create a value declaration given a name and a RHS.
 basicValueDecl :: Text -> P.Expr -> P.Declaration
 basicValueDecl ident expr =
