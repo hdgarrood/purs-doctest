@@ -41,14 +41,17 @@ import Language.PureScript.Docs.Doctest.Types (Example(..), Examples(..))
 --    }
 --
 entryPointModule :: [Examples] -> P.Module
-entryPointModule = go . map (mkDoctestModuleName . examplesModuleName)
+entryPointModule = go . map examplesModuleName
   where
   go modNames =
     let
       moduleName =
         P.moduleNameFromString "$Doctest.$Main"
       doctestImport mn =
-        (mn, P.Implicit, Just mn)
+        let
+          mn' = mkDoctestModuleName mn
+        in
+          (mn', P.Implicit, Just mn')
       main =
         mainDecl modNames
     in
@@ -72,7 +75,7 @@ mainDecl modNames =
         , P.Literal (P.StringLiteral (P.mkString (P.runModuleName mn)))
         )
       , ( P.mkString "examples"
-        , P.Var (P.Qualified (Just mn) (P.Ident "examples"))
+        , P.Var (P.Qualified (Just (mkDoctestModuleName mn)) (P.Ident "examples"))
         )
       ])
 
